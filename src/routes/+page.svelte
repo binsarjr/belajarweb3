@@ -1,48 +1,73 @@
 <script lang="ts">
 	import { connected } from '$lib/stores/preferences';
-	import { onMount } from 'svelte';
-	// import Web3 from 'web3';
-	// const web3 = new Web3('http://127.0.0.1:8545');
+	import { writable } from 'svelte/store';
+	import Web3 from 'web3';
+	import Tasks from '../lib/abis/Tasks.json';
 
-	// let Accounts: string[] = [];
-	// let Account = '';
-	// let balance: string;
-	// onMount(async () => {
-	// 	Accounts = await web3.eth.getAccounts();
-	// 	Account = Accounts[0];
+	let account = writable<string | null>(null);
+	let balance = writable('0');
+	let todos = writable<string[]>([]);
+	let Task = writable<any>(null);
+	let todo = '';
 
-	// 	let rawBalance = await web3.eth.getBalance(Account);
+	let web3: Web3 | null = null;
+	const connectToWallet = async () => {
+		if (typeof window.ethereum === 'undefined') {
+			console.error('Please Install Metamask');
+			return;
+		}
+		await window.ethereum.request({ method: 'eth_requestAccounts' });
 
-	// 	balance = web3.utils.fromWei(web3.utils.toBN(rawBalance), 'ether');
-	// });
-	// function onClick() {}
-	let version = '0200000';
-	let prevBlock = '45678';
-	let nonce = '3456789';
-	let newBlock = 'asd';
+		web3 = new Web3(window.ethereum);
+		$connected = true;
+		let accounts = await web3.eth.getAccounts();
+		$account = accounts[0];
+		$balance = await web3.eth.getBalance($account);
+	};
+	if ($connected) connectToWallet();
+	$: if ($connected && web3) {
+		web3.eth.net.getId().then(async (networkId: any) => {
+			// @ts-ignore
+			const network = Tasks.networks[networkId];
+			if (web3) {
+				$Task = new web3.eth.Contract(Tasks.abi as any, network.address);
+				$todos = await $Task.methods.getTasks().call();
+			}
+		});
+	}
+	const disconnectWallet = async () => {
+		$connected = false;
+	};
+	async function addTodo() {
+		if (todo) {
+			const res = await $Task.methods.setTasks(todo).send({ from: $account });
+			console.log(res);
+			if (res.status) {
+				$todos = await $Task.methods.getTasks().call();
+			}
+		}
+		todo = '';
+	}
 </script>
 
-<!-- 
-<button on:click={onClick}>Connect Wallet</button>
-<h1>asd</h1>
 {#if $connected}
-	<p>{Account}: {balance}</p>
-{/if} -->
-
-<table>
-	<tr>
-		<th>Version</th>
-		<td>{version}</td>
-	</tr>
-	<tr>
-		<th>Previous Block</th>
-		<td>{prevBlock}</td>
-	</tr>
-	<tr>
-		<th>Nonce</th><th /><td>{nonce}</td>
-	</tr>
-	<tr>
-		<th> New Block </th>
-		<td>{newBlock}</td>
-	</tr>
-</table>
+	<button on:click={disconnectWallet}>Disconnect TO Wallet</button>
+	<h3>
+		Current account <br />
+		{$account}
+	</h3>
+	<form on:submit|preventDefault={addTodo}>
+		<input label="Insert Todo" bind:value={todo} class="border" />
+		<button type="submit"> ADD </button>
+	</form>
+	<h3>Todos</h3>
+	<ul>
+		{#each $todos as todo}
+			<li>
+				<p>{todo}</p>
+			</li>
+		{/each}
+	</ul>
+{:else}
+	<button on:click={connectToWallet}>Connect TO Wallet</button>
+{/if}
